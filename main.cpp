@@ -10,11 +10,11 @@
 //******************************************/
 // Librerias
 //******************************************/
-#include <Arduino.h>
-#include <stdint.h>
-#include <driver/ledc.h>
-#include "config.h"
-#include "Display7.h"
+#include <Arduino.h>          // Librería principal de Arduino
+#include <stdint.h>           // Define tipos de datos enteros
+#include <driver/ledc.h>      // Librería para el control avanzado de PWM.
+#include "config.h"           // Archivo para credenciales de WiFi y Adafruit IO).
+#include "Display7.h"         // Archivo para las funciones del display de 7 segmentos
 
 //******************************************/
 // Definiciones
@@ -35,13 +35,13 @@
 #define freqPWMS 50
 #define resPWM 16
 
-#define delayBounce 250
+#define delayBounce 250       // Para el antirrebote del botón 
 
 //******************************************/
 // Prototipos de funciones
 //******************************************/
-void initBoton(void);
-void IRAM_ATTR BTN1_ISR (void);
+void initBoton(void); 
+void IRAM_ATTR BTN1_ISR (void); //
 
 void initPWM(void);
 
@@ -51,28 +51,29 @@ void getADCEMA(void);
 //******************************************/
 // Variables globales
 //******************************************/
-AdafruitIO_Feed *tempCanal = io.feed("proyecto1-temp");
+AdafruitIO_Feed *tempCanal = io.feed("proyecto1-temp"); // interactuar con el "feed" de temperatura en Adafruit IO.
 
-float ValorT=0;
-volatile int32_t contadorS;
+float ValorT=0;               // Almacena la última temperatura enviada a la nube.
+volatile int32_t contadorS;   // Variable para el switch-case que controla los estados.
 
-volatile bool btn1Pressed;
-volatile uint32_t lastISRBtn1 = 0;
+volatile bool btn1Pressed;    // Bandera que se activa en la ISR del botón
+volatile uint32_t lastISRBtn1 = 0; // Almacena el tiempo de la última pulsación para el antirrebote.
 
-float temperatureC;
-float alpha = 0.3;
-float adcFiltered = 0.0;
-int adcRaw = 0;
+float temperatureC;           // Almacena la temperatura actual calculada.
+float alpha = 0.3;            // Factor de suavizado para el filtro EMA.
+float adcFiltered = 0.0;      // Valor filtrado del ADC.
+int adcRaw = 0;               // Valor sin filtrar del ADC.
 
-int decenas = 0;
-int unidades = 0;
-int decimas = 0;
+int decenas = 0;              // Dígito de las decenas de la temperatura.
+int unidades = 0;             // Dígito de las unidades.
+int decimas = 0;              // Dígito de las décimas.
 
-int currentDisplay = 0;
+int currentDisplay = 0;       // Controla qué dígito del display se está mostrando.
 
 //******************************************/
 // ISRs Rutinas de Interrupcion
 //******************************************/
+// Lógica de antirrebote.
 void IRAM_ATTR BTN1_ISR (void){
   uint32_t tiempoActual = millis();
 
@@ -81,7 +82,7 @@ void IRAM_ATTR BTN1_ISR (void){
     lastISRBtn1 = tiempoActual;
   }
 }
-
+// Temporizador de hardware.
 hw_timer_t * timer = NULL;
 
 void IRAM_ATTR onTimer() {
@@ -90,6 +91,7 @@ void IRAM_ATTR onTimer() {
   digitalWrite(display2, LOW);
   digitalWrite(display3, LOW);
 
+  // Encender el display correspondiente y mostrar su número.
   switch(currentDisplay) {
     case 0:
       digitalWrite(display1, HIGH);
@@ -107,14 +109,16 @@ void IRAM_ATTR onTimer() {
       desplegarPunto(0);
       break;
   }
+  // Pasar al siguiente display para el próximo ciclo.
   currentDisplay = (currentDisplay + 1) % 3;
 }
 
 void setup() {
-  Serial.begin(115200);
-  initBoton();
-  configDisplay7();
+  Serial.begin(115200); // Inicia la comunicación serial.
+  initBoton();          // Configura el pin del botón y su interrupción.
+  configDisplay7();     // Configura los pines del display de 7 segmentos.
 
+  // Configuración del Timer de Hardware
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000, true);
@@ -157,20 +161,22 @@ void setup() {
   digitalWrite(display2, LOW);
   digitalWrite(display3, LOW);
 
-  initPWM();
+  initPWM(); // Configura el PWM para el servo.
 }
 
 void loop() { 
-  io.run();
-  getADCEMA();
+  io.run();      // Mantiene la conexión con Adafruit IO activa.
+  getADCEMA();   // Lee el sensor y actualiza la variable temperatureC.
 
   unsigned long currentMillis = millis();
 
+  // Lógica de Visualización en Display
   int tempC = ValorT * 10;
   decenas = tempC / 100;
   unidades = (tempC / 10) % 10;
   decimas = tempC % 10;
 
+  // Lógica del Botón
   if (btn1Pressed) {
     btn1Pressed = false;
     ValorT = temperatureC;
@@ -179,6 +185,7 @@ void loop() {
     Serial.println(ValorT);
     tempCanal->save(ValorT);
 
+    // Clasifica la temperatura en tres rangos para el control del servo y LEDs.
     if (ValorT < 22.0) {
     contadorS = 0;
     }
@@ -189,7 +196,9 @@ void loop() {
       contadorS = 2;
     }
   }
-  
+
+  // Estados para Servo y LEDs
+  // Actúa según el estado definido por 'contadorS'.
   switch(contadorS){
     case 0:
     ledcWrite(pwmChannel3, 3277);
@@ -217,16 +226,18 @@ void loop() {
 // Otras funciones
 //******************************************/
 void initBoton(void){
-  pinMode(BTN1, INPUT_PULLUP);
+  pinMode(BTN1, INPUT_PULLUP); // Configura el pin como entrada con resistencia de pull-up interna.
   attachInterrupt(BTN1, &BTN1_ISR, FALLING);
 }
 
 void initPWM(void) {
+  // Inicializa el sistema PWM (LEDC) para controlar el servo.
     ledcSetup(pwmChannel3, freqPWMS, resPWM);
     ledcAttachPin(servo, pwmChannel3);
 }
 
 void getADCEMA(void){
+  // Lee el valor del ADC, aplica un filtro EMA y calcula la temperatura.
   adcRaw = analogReadMilliVolts(ADCPIN);   
   adcFiltered = alpha * adcRaw + (1 - alpha) * adcFiltered;  
   
@@ -234,4 +245,5 @@ void getADCEMA(void){
   
   temperatureC = roundf(temperatureC * 10) / 10.0;
 }
+
 
